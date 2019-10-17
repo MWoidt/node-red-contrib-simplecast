@@ -49,7 +49,6 @@ module.exports = function(RED) {
         this.onStatus = function(error, status) {
             if (error) return node.onError(error);
 
-            //node.client.close();
             node.status({
                 fill: "green",
                 shape: "dot",
@@ -124,10 +123,23 @@ module.exports = function(RED) {
             }
 
 
+            try {
+                node.client.getAppAvailability(node.dmrApp.APP_ID, (getAppAvailabilityError, availability) => {
+                    if (getAppAvailabilityError) {
+                        node.client.close();
+                        node.clientConnect();
+                    }
+                });
+            } catch (exception) {
+                node.debug(" in catch 1 ");
+                node.clientConnect();
+            }
 
             try {
                 node.client.getAppAvailability(node.dmrApp.APP_ID, (getAppAvailabilityError, availability) => {
-                    if (getAppAvailabilityError) return node.onError(getAppAvailabilityError);
+                    if (getAppAvailabilityError) {
+                        return node.onError(getAppAvailabilityError);
+                    }
 
                     // Only attempt to use the app if its available
                     if (!availability || !(node.dmrApp.APP_ID in availability) || availability[node.dmrApp.APP_ID] === false) return node.onStatus(null, null);
@@ -168,6 +180,7 @@ module.exports = function(RED) {
                 });
 
             } catch (exception) {
+                node.debug(" in catch 2 ");
                 node.onError(exception.message);
             }
 
@@ -209,7 +222,6 @@ module.exports = function(RED) {
 
 
         this.clientConnect = function() {
-            node.debug("in clientConnect");
             try {
                 // Setup client
                 node.client = new Client();
@@ -221,7 +233,6 @@ module.exports = function(RED) {
                 };
 
                 node.client.connect(connectOptions, () => {
-                    node.debug("in client connect cb");
                     node.status({
                         fill: "green",
                         shape: "dot",
@@ -339,7 +350,6 @@ module.exports = function(RED) {
 
                     // Get castable URL
                     return googletts(command.text, language, speed).then(url => {
-                        node.debug(url);
                         let media = node.buildMediaObject({
                             url: url,
                             contentType: "audio/mp3",
