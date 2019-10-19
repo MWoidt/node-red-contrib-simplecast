@@ -5,11 +5,16 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bigsfr/node-red-contrib-simplecast/git"
+  },
+  "bugs": {
+    "url": "https://github.com/bigsfr/node-red-contrib-simplecast/issues"
+  },
   "author": "bigs",
   "license": "ISC",
   "description": "a simple nodered node to cast to chromecast or googlehome",
-
-
   "dependencies": {
     "castv2-client": "^1.2.0",
     "google-tts-api": "0.0.4"
