@@ -34,12 +34,23 @@ module.exports = function(RED) {
         //
 
         this.onError = function(error) {
-            node.status({
-                fill: "red",
-                shape: "dot",
-                text: "error"
-            });
-            node.error(error);
+            if (String(error).indexOf("EHOSTUNREACH") >= 0) {
+                node.client = null;
+                node.status({
+                    fill: "red",
+                    shape: "dot",
+                    text: "Host unreachable"
+                });
+                node.error(error);
+                if (cnx_timeout === null) poll_cnx();
+            } else {
+                node.status({
+                    fill: "red",
+                    shape: "dot",
+                    text: "error"
+                });
+                node.error(error);
+            }
         };
 
 
@@ -66,8 +77,6 @@ module.exports = function(RED) {
                 payload: status
             });
         };
-
-
 
 
         //
@@ -122,19 +131,6 @@ module.exports = function(RED) {
                 };
             }
 
-
-            try {
-                node.client.getAppAvailability(node.dmrApp.APP_ID, (getAppAvailabilityError, availability) => {
-                    if (getAppAvailabilityError) {
-                        node.client.close();
-                        node.clientConnect();
-                    }
-                });
-            } catch (exception) {
-                node.debug(" in catch 1 ");
-                node.clientConnect();
-            }
-
             try {
                 node.client.getAppAvailability(node.dmrApp.APP_ID, (getAppAvailabilityError, availability) => {
                     if (getAppAvailabilityError) {
@@ -180,7 +176,6 @@ module.exports = function(RED) {
                 });
 
             } catch (exception) {
-                node.debug(" in catch 2 ");
                 node.onError(exception.message);
             }
 
@@ -223,9 +218,11 @@ module.exports = function(RED) {
 
         this.clientConnect = function() {
             try {
-                // Setup client
-                node.client = new Client();
-                node.client.on("error", node.onError);
+                if (node.client === null) {
+                    // Setup client
+                    node.client = new Client();
+                    node.client.on("error", node.onError);
+                }
 
                 // Execute command
                 let connectOptions = {
@@ -241,6 +238,8 @@ module.exports = function(RED) {
                 });
 
                 node.dmrApp = DefaultMediaReceiver;
+                clearTimeout(cnx_timeout);
+                cnx_timeout = null;
             } catch (exception) {
                 node.onError(exception.message);
                 this.status({
@@ -376,10 +375,8 @@ module.exports = function(RED) {
 
                     switch (command.type) {
                         case "PAUSE":
-                            //if (status.supportedMediaCommands & 1) {
                             receiver.pause(node.onStatus);
                             return receiver.getStatus(node.onStatus);
-                            //}
                             break;
 
                         case "QUEUE_UPDATE":
@@ -390,7 +387,6 @@ module.exports = function(RED) {
                             break;
 
                         case "QUEUE_NEXT":
-                            //receiver.next(node.onStatus);
                             receiver.queueUpdate(null, {
                                 jump: 1
                             }, node.onStatus);
@@ -398,7 +394,6 @@ module.exports = function(RED) {
                             break;
 
                         case "QUEUE_PREV":
-                            //receiver.prev(node.onStatus);
                             receiver.queueUpdate(null, {
                                 jump: -1
                             }, node.onStatus);
@@ -432,10 +427,6 @@ module.exports = function(RED) {
                     // Nothing executed, return the current status
                     return node.onError("Malformed media control command");
                 });
-
-                // If it got this far just error
-                //return node.onError("Malformed media command");
-
             }
         };
 
@@ -589,6 +580,13 @@ module.exports = function(RED) {
             let contentType = contentTypeMap[ext.toLowerCase()];
             return contentType || "unknow";
         };
+
+        var cnx_timeout = null;
+
+        function poll_cnx() {
+            node.clientConnect();
+            cnx_timeout = setTimeout(poll_cnx, 20000);
+        }
         this.clientConnect();
     }
 
