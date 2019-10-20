@@ -33,15 +33,14 @@ module.exports = function(RED) {
         //  Global error handler
         //
 
-        this.onError = function(error) {
-            if (String(error).indexOf("EHOSTUNREACH") >= 0) {
+        this.onError = function(error, done) {
+            if (String(error).indexOf("EHOSTUNREACH") >= 0 || String(error).indexOf("Device timeout") >= 0) {
                 node.client = null;
                 node.status({
                     fill: "red",
                     shape: "dot",
                     text: "Host unreachable"
                 });
-                node.error(error);
                 if (cnx_timeout === null) poll_cnx();
             } else {
                 node.status({
@@ -49,12 +48,17 @@ module.exports = function(RED) {
                     shape: "dot",
                     text: "error"
                 });
+            }
+
+            if (done) {
+                done(error);
+            } else {
                 node.error(error);
             }
         };
 
 
-        //
+        ///
         //  Status handler
         //
         this.onStatus = function(error, status) {
@@ -88,9 +92,9 @@ module.exports = function(RED) {
                 node.send.apply(node, arguments)
             }
 
+            if (node.client === null) node.onError(exception.message, done);
+
             // Validate incoming message
-
-
             if (typeof msg.payload === 'string' || msg.payload instanceof String) {
                 if (msg.payload.match("MUTE|CLOSE|UNMUTE|GET_STATUS|VOL_INC|VOL_DEC|GET_VOLUME|STOP|STATUS|PAUSE")) msg.payload = {
                     type: msg.payload
@@ -131,71 +135,67 @@ module.exports = function(RED) {
                 };
             }
 
+
+
             try {
                 node.client.getAppAvailability(node.dmrApp.APP_ID, (getAppAvailabilityError, availability) => {
                     if (getAppAvailabilityError) {
-                        return node.onError(getAppAvailabilityError);
+                        return node.onError(getAppAvailabilityError, done);
                     }
 
                     // Only attempt to use the app if its available
-                    if (!availability || !(node.dmrApp.APP_ID in availability) || availability[node.dmrApp.APP_ID] === false) return node.onStatus(null, null);
+                    if (!availability || !(node.dmrApp.APP_ID in availability) || availability[node.dmrApp.APP_ID] === false)
+                        return node.onStatus(null, null);
 
                     // Get current sessions
                     node.client.getSessions((getSessionsError, sessions) => {
-                        if (getSessionsError) return node.onError(getSessionsError);
+                        if (getSessionsError) return node.onError(getSessionsError, done);
 
                         let activeSession = sessions.find(session => session.appId === node.dmrApp.APP_ID);
                         if (activeSession) {
 
                             // Join active Application session
                             node.client.join(activeSession, node.dmrApp, (joinError, receiver) => {
-                                if (joinError) return node.onError(joinError);
+                                if (joinError) return node.onError(joinError, done);
 
                                 node.status({
                                     fill: "green",
                                     shape: "dot",
                                     text: "joined"
                                 });
-                                node.sendCastCommand(receiver, msg.payload);
+                                node.sendCastCommand(receiver, msg.payload, done);
+                                if (done) {
+                                    done();
+                                }
                             });
 
                         } else {
                             // Launch new Application session
                             node.client.launch(node.dmrApp, (launchError, receiver) => {
-                                if (launchError) return node.onError(launchError);
+                                if (launchError) return node.onError(launchError, done);
 
                                 node.status({
                                     fill: "green",
                                     shape: "dot",
                                     text: "launched"
                                 });
-                                node.sendCastCommand(receiver, msg.payload);
+                                node.sendCastCommand(receiver, msg.payload, done);
+                                if (done) {
+                                    done();
+                                }
                             });
                         }
                     });
                 });
 
             } catch (exception) {
-                node.onError(exception.message);
+                node.onError(exception.message, done);
             }
 
             if (done) {
                 done();
             }
 
-            /*if (err) 
-            {
-            	if (done)
-            	{
-            		// Node-RED 1.0 compatible
-            		done(err);
-            	}
-            	else
-            	{
-            		// Node-RED 0.x compatible
-            		node.error(err,msg);
-            	}
-            }*/
         });
 
 
@@ -240,7 +240,9 @@ module.exports = function(RED) {
                 node.dmrApp = DefaultMediaReceiver;
                 clearTimeout(cnx_timeout);
                 cnx_timeout = null;
+
             } catch (exception) {
+
                 node.onError(exception.message);
                 this.status({
                     fill: "red",
@@ -433,7 +435,7 @@ module.exports = function(RED) {
 
 
 
-        this.sendCastCommand = function(receiver, command) {
+        this.sendCastCommand = function(receiver, command, done) {
             node.status({
                 fill: "yellow",
                 shape: "dot",
